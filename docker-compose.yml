@@ -1,0 +1,63 @@
+version: '3.7'
+
+networks:
+  default:
+    driver: bridge
+    name: devopts
+
+services:
+  backend: &python
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 'backend'
+    volumes:
+      - .:/code/backend
+    ports:
+      - "8000:8000"
+    expose:
+      - "8000"
+    restart: on-failure
+    command: python manage.py runserver 0.0.0.0:8000
+    depends_on:
+      - db
+      - rabbitmq
+      - celery_worker
+  db:
+      image: postgres:10-alpine
+      environment:
+          - POSTGRES_DB=app
+          - POSTGRES_USER=postgres
+          - POSTGRES_PASSWORD=supersecretpassword
+  # rabbitmq message queue
+  rabbitmq:
+    image: rabbitmq:3.7-alpine
+    ports:
+      - 5672:5672
+      - 15672:15672
+    expose:
+      - "15672"
+  celery_worker:
+    <<: *python
+    container_name: 'backend_celery_worker'
+    command: celery -A config worker --loglevel=info
+    ports: []
+    depends_on:
+      - rabbitmq
+      - db
+  celery_beat:
+    <<: *python
+    container_name: 'backend_celery_beat'
+    command: celery -A config beat --loglevel=info
+    ports: []
+    depends_on:
+      - rabbitmq
+      - db
+  flower:
+    image: mher/flower
+    environment:
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq
+#      - CELERY_BROKER_URL=amqp://rabbitmq
+      - FLOWER_PORT=5555
+    ports:
+      - 5555:5555
